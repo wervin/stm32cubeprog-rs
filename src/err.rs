@@ -1,83 +1,128 @@
 use std::convert::From;
-use std::error::Error as ErrorTrait;
-use std::fmt::{Display, Formatter, Result as FmtResult};
-use std::io::Error as IoError;
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
-///This is a library-specific error that is returned by all calls to all APIs.
 #[derive(Debug)]
 pub enum Error {
-    ///The library could not be opened.
-    OpeningLibraryError(IoError),
-    ///The symbol could not be obtained.
-    SymbolGettingError(IoError),
-    ///Value of the symbol was null.
-    NullSymbol,
-    ///Address could not be matched to a dynamic link library
-    PathNotMatchingLibrary(IoError),
-    ///Null Character in path name
-    NullCharacter,
-    ///Unsupported Target
+    LibLoadingError(libloading::Error),
+    FormatError(std::fmt::Error),
+    FromUtf8Error(std::string::FromUtf8Error),
+    CubeProgrammerError(CubeProgrammerError),
     UnsupportedPlatform,
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        use self::Error::*;
-        f.write_str(&format!("{:?}", self))?;
         match self {
-            OpeningLibraryError(msg) => {
-                f.write_str(": ")?;
-                msg.fmt(f)
+            self::Error::LibLoadingError(e) => write!(f, "Lib loading error: {}", e),
+            self::Error::FormatError(e) => write!(f, "Format error: {}", e),
+            self::Error::FromUtf8Error(e) => write!(f, "UTF-8 conversion error: {}", e),
+            self::Error::UnsupportedPlatform => {
+                write!(f, ": The target system is not supported by visa")
             }
-            SymbolGettingError(msg) => {
-                f.write_str(": ")?;
-                msg.fmt(f)
-            }
-            NullSymbol => f.write_str(": Symbol is Null."),
-            PathNotMatchingLibrary(msg) => {
-                f.write_str(": Path does not lead to a library.")?;
-                msg.fmt(f)
-            }
-            NullCharacter => f.write_str(": The path contains a null character."),
-            UnsupportedPlatform => f.write_str(": The target system is not supported by visa."),
+            self::Error::CubeProgrammerError(e) => write!(f, "Cube Programmer error: {}", e),
         }
     }
 }
 
-impl From<dlopen::Error> for Error {
-    fn from(value: dlopen::Error) -> Self {
+impl From<libloading::Error> for Error {
+    fn from(err: libloading::Error) -> Error {
+        Error::LibLoadingError(err)
+    }
+}
+
+impl From<std::fmt::Error> for Error {
+    fn from(err: std::fmt::Error) -> Error {
+        Error::FormatError(err)
+    }
+}
+
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(err: std::string::FromUtf8Error) -> Error {
+        Error::FromUtf8Error(err)
+    }
+}
+
+impl From<CubeProgrammerError> for Error {
+    fn from(err: CubeProgrammerError) -> Error {
+        Error::CubeProgrammerError(err)
+    }
+}
+
+impl std::error::Error for Error {}
+
+#[derive(Debug, Copy, Clone)]
+pub enum CubeProgrammerError {
+    DeviceNotConnected = -1,
+    NoDeviceFound = -2,
+    ConnectionError = -3,
+    FileNotFound = -4,
+    UnsupportedOperation = -5,
+    UnsupportedInterface = -6,
+    InsufficientMemory = -7,
+    UnknownParameters = -8,
+    MemoryReadError = -9,
+    MemoryWriteError = -10,
+    MemoryEraseError = -11,
+    UnsupportedFileFormat = -12,
+    RefreshRequired = -13,
+    SecurityError = -14,
+    FrequencyError = -15,
+    RdpEnabledError = -16,
+}
+
+impl Display for CubeProgrammerError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            CubeProgrammerError::DeviceNotConnected => write!(f, "Device not connected"),
+            CubeProgrammerError::NoDeviceFound => write!(f, "Device not found"),
+            CubeProgrammerError::ConnectionError => write!(f, "Device connection error"),
+            CubeProgrammerError::FileNotFound => write!(f, "No such file"),
+            CubeProgrammerError::UnsupportedOperation => write!(
+                f,
+                "Operation not supported or unimplemented on this interface"
+            ),
+            CubeProgrammerError::UnsupportedInterface => write!(
+                f,
+                "Interface not supported or unimplemented on this plateform"
+            ),
+            CubeProgrammerError::InsufficientMemory => write!(f, "Insufficient memory"),
+            CubeProgrammerError::UnknownParameters => write!(f, "Wrong parameters"),
+            CubeProgrammerError::MemoryReadError => write!(f, "Memory read failure"),
+            CubeProgrammerError::MemoryWriteError => write!(f, "Memory write failure"),
+            CubeProgrammerError::MemoryEraseError => write!(f, "Memory erase failure"),
+            CubeProgrammerError::UnsupportedFileFormat => {
+                write!(f, "File format not supported for this kind of device")
+            }
+            CubeProgrammerError::RefreshRequired => write!(f, "Refresh required"),
+            CubeProgrammerError::SecurityError => write!(f, "Security error"),
+            CubeProgrammerError::FrequencyError => write!(f, "Frequency error"),
+            CubeProgrammerError::RdpEnabledError => write!(f, "RDP Enabled error"),
+        }
+    }
+}
+
+impl From<i32> for CubeProgrammerError {
+    fn from(value: i32) -> CubeProgrammerError {
         match value {
-            dlopen::Error::NullCharacter(_) => Error::NullCharacter,
-            dlopen::Error::OpeningLibraryError(e) => Error::OpeningLibraryError(e),
-            dlopen::Error::SymbolGettingError(e) => Error::SymbolGettingError(e),
-            dlopen::Error::NullSymbol => Error::NullSymbol,
-            dlopen::Error::AddrNotMatchingDll(e) => Error::PathNotMatchingLibrary(e),
+            -1 => CubeProgrammerError::DeviceNotConnected,
+            -2 => CubeProgrammerError::NoDeviceFound,
+            -3 => CubeProgrammerError::ConnectionError,
+            -4 => CubeProgrammerError::FileNotFound,
+            -5 => CubeProgrammerError::UnsupportedOperation,
+            -6 => CubeProgrammerError::UnsupportedInterface,
+            -7 => CubeProgrammerError::InsufficientMemory,
+            -8 => CubeProgrammerError::UnknownParameters,
+            -9 => CubeProgrammerError::MemoryReadError,
+            -10 => CubeProgrammerError::MemoryWriteError,
+            -11 => CubeProgrammerError::MemoryEraseError,
+            -12 => CubeProgrammerError::UnsupportedFileFormat,
+            -13 => CubeProgrammerError::RefreshRequired,
+            -14 => CubeProgrammerError::SecurityError,
+            -15 => CubeProgrammerError::FrequencyError,
+            -16 => CubeProgrammerError::RdpEnabledError,
+            _ => panic!("Invalid value for CubeProgrammerError"),
         }
     }
 }
 
-impl ErrorTrait for Error {
-    fn description(&self) -> &str {
-        use self::Error::*;
-        match *self {
-            OpeningLibraryError(_) => "Could not open library",
-            SymbolGettingError(_) => "Could not obtain symbol from the library",
-            NullSymbol => "The symbol is NULL",
-            PathNotMatchingLibrary(_) => "Address does not match any dynamic link library",
-            NullCharacter => "Uncategorized",
-            UnsupportedPlatform => "The target system is not supported by visa",
-        }
-    }
-
-    fn cause(&self) -> Option<&dyn ErrorTrait> {
-        use self::Error::*;
-        match self {
-            &OpeningLibraryError(_)
-            | &SymbolGettingError(_)
-            | &NullSymbol
-            | &PathNotMatchingLibrary(_)
-            | &NullCharacter
-            | &UnsupportedPlatform => None,
-        }
-    }
-}
+impl std::error::Error for CubeProgrammerError {}

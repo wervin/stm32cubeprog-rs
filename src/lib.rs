@@ -1,4 +1,4 @@
-// mod bindings;
+pub mod err;
 
 #[repr(C)]
 pub struct DisplayCallbacks {
@@ -15,7 +15,6 @@ extern "C" fn load_bar(_current: std::os::raw::c_int, _total: std::os::raw::c_in
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-
 pub enum Verbosity {
     Level0 = 0,
     Level1 = 1,
@@ -25,7 +24,6 @@ pub enum Verbosity {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-
 pub enum DebugPort {
     Jtag = 0,
     Swd = 1,
@@ -43,7 +41,6 @@ pub enum DebugConnectMode {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-
 pub enum DebugResetMode {
     SoftwareReset = 0,
     HardwareReset = 1,
@@ -52,7 +49,6 @@ pub enum DebugResetMode {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-
 pub struct Frequencies {
     pub jtag_freq: [std::os::raw::c_uint; 12usize],
     pub jtag_freq_number: std::os::raw::c_uint,
@@ -62,7 +58,6 @@ pub struct Frequencies {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-
 pub struct DebugConnectParameters {
     pub dbg_port: DebugPort,
     pub index: std::os::raw::c_int,
@@ -90,16 +85,19 @@ type GetStLinkList = unsafe extern "C" fn(
     debug_connect_parameters: *mut *mut DebugConnectParameters,
     shared: std::os::raw::c_int,
 ) -> std::os::raw::c_int;
+type ConnectStLink =
+    unsafe extern "C" fn(debug_connect_parameters: DebugConnectParameters) -> ::std::os::raw::c_int;
 
 pub struct VTable {
     set_loaders_path: libloading::os::unix::Symbol<SetLoaderPath>,
     set_display_callbacks: libloading::os::unix::Symbol<SetDisplayCallbacks>,
     set_verbosity_level: libloading::os::unix::Symbol<SetVerbosityLevel>,
     get_stlink_list: libloading::os::unix::Symbol<GetStLinkList>,
+    connect_stlink: libloading::os::unix::Symbol<ConnectStLink>,
 }
 
 impl VTable {
-    fn new(library: &libloading::Library) -> Result<Self, Box<dyn std::error::Error>> {
+    fn new(library: &libloading::Library) -> Result<Self, err::Error> {
         let set_loaders_path: libloading::Symbol<SetLoaderPath> =
             unsafe { library.get(b"setLoadersPath\0")? };
         let set_loaders_path = unsafe { set_loaders_path.into_raw() };
@@ -112,12 +110,16 @@ impl VTable {
         let get_stlink_list: libloading::Symbol<GetStLinkList> =
             unsafe { library.get(b"getStLinkList\0")? };
         let get_stlink_list = unsafe { get_stlink_list.into_raw() };
+        let connect_stlink: libloading::Symbol<ConnectStLink> =
+            unsafe { library.get(b"connectStLink\0")? };
+        let connect_stlink = unsafe { connect_stlink.into_raw() };
 
         Ok(VTable {
             set_loaders_path,
             set_display_callbacks,
             set_verbosity_level,
             get_stlink_list,
+            connect_stlink,
         })
     }
 }
@@ -126,6 +128,7 @@ pub struct STLink {
     serial_number: String,
     firmware_version: String,
     board: String,
+    debug_connect_parameters: DebugConnectParameters,
 }
 
 impl std::fmt::Display for STLink {
@@ -146,40 +149,40 @@ pub struct STM32CubeProg {
 
 impl STM32CubeProg {
     #[cfg(target_os = "linux")]
-    fn library_path(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    fn library_path(path: &str) -> Result<String, std::fmt::Error> {
         Ok(format!("{path}/lib/libCubeProgrammer_API.so"))
     }
 
     #[cfg(target_os = "windows")]
-    fn library_path(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    fn library_path(path: &str) -> Result<String, std::fmt::Error> {
         Ok(format!("{path}/lib/libCubeProgrammer_API.so"))
     }
 
     #[cfg(all(not(target_os = "linux"), not(target_os = "windows")))]
-    fn library_path(_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    fn library_path(_path: &str) -> Result<String, std::fmt::Error> {
         Err(Box::new(std::io::Error::from(
             std::io::ErrorKind::Unsupported,
         )))
     }
 
     #[cfg(target_os = "linux")]
-    fn flashloader_path(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    fn flashloader_path(path: &str) -> Result<String, std::fmt::Error> {
         Ok(format!("{path}/bin"))
     }
 
     #[cfg(target_os = "windows")]
-    fn flashloader_path(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    fn flashloader_path(path: &str) -> Result<String, std::fmt::Error> {
         Ok(format!("{path}/bin"))
     }
 
     #[cfg(all(not(target_os = "linux"), not(target_os = "windows")))]
-    fn flashloader_path(_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    fn flashloader_path(_path: &str) -> Result<String, std::fmt::Error> {
         Err(Box::new(std::io::Error::from(
             std::io::ErrorKind::Unsupported,
         )))
     }
 
-    pub fn new(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(path: &str) -> Result<Self, err::Error> {
         let library = unsafe { libloading::Library::new(Self::library_path(path)?)? };
         let vtable = VTable::new(&library)?;
 
@@ -200,7 +203,7 @@ impl STM32CubeProg {
         Ok(STM32CubeProg { library, vtable })
     }
 
-    pub fn discover(self) -> Vec<STLink> {
+    pub fn discover(self) -> Result<Vec<STLink>, err::Error> {
         let mut debug_connect_parameters = 0 as *mut DebugConnectParameters;
         let stlink_count =
             unsafe { (self.vtable.get_stlink_list)(&mut debug_connect_parameters, 0) };
@@ -210,19 +213,30 @@ impl STM32CubeProg {
 
         params_slice
             .iter()
-            .map(|param| STLink {
-                serial_number: String::from_utf8(
-                    param.serial_number.iter().map(|&c| c as u8).collect(),
-                )
-                .unwrap_or_default(),
-                firmware_version: String::from_utf8(
-                    param.firmware_version.iter().map(|&c| c as u8).collect(),
-                )
-                .unwrap_or_default(),
-                board: String::from_utf8(param.board.iter().map(|&c| c as u8).collect())
-                    .unwrap_or_default(),
+            .map(|param| -> Result<STLink, err::Error> {
+                let serial_number =
+                    String::from_utf8(param.serial_number.iter().map(|&c| c as u8).collect())?;
+                let firmware_version =
+                    String::from_utf8(param.firmware_version.iter().map(|&c| c as u8).collect())?;
+                let board = String::from_utf8(param.board.iter().map(|&c| c as u8).collect())?;
+                let debug_connect_parameters = param.clone();
+                Ok(STLink {
+                    serial_number,
+                    firmware_version,
+                    board,
+                    debug_connect_parameters,
+                })
             })
-            .collect()
+            .collect::<Result<Vec<STLink>, err::Error>>()
+    }
+
+    pub fn connect(self, stlink: STLink) -> Result<(), err::Error> {
+        let error = unsafe { (self.vtable.connect_stlink)(stlink.debug_connect_parameters) };
+        if error == 0 {
+            Ok(())
+        } else {
+            Err(err::CubeProgrammerError::from(error).into())
+        }
     }
 }
 

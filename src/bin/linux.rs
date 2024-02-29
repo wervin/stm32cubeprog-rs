@@ -7,8 +7,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_str()
         .expect("Failed to join STM32CubeProgrammer path");
     let stm32prog = stm32cubeprog_rs::STM32CubeProg::new(stm32prog_path)?;
-    let stlinks = stm32prog.discover();
-    stlinks.iter().for_each(|stlink| println!("{stlink}"));
+    let stlinks = stm32prog.discover()?;
+    stlinks.iter().for_each(|stlink| {
+        println!("{stlink}");
+        // stm32prog.connect(stlink);
+    });
 
     Ok(())
 }
