@@ -1,3 +1,4 @@
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let home_dir = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
@@ -7,11 +8,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_str()
         .expect("Failed to join STM32CubeProgrammer path");
     let stm32prog = stm32cubeprog_rs::STM32CubeProg::new(stm32prog_path)?;
-    let stlinks = stm32prog.discover()?;
-    stlinks.iter().for_each(|stlink| {
+    let mut stlinks = stm32prog.discover()?;
+    for stlink in stlinks.iter_mut() {
         println!("{stlink}");
-        // stm32prog.connect(stlink);
-    });
+        stlink.reset_mode(stm32cubeprog_rs::DebugResetMode::HardwareReset);
+        stlink.connection_mode(stm32cubeprog_rs::DebugConnectMode::UnderReset);
+        stm32prog.connect(stlink)?;
+        stm32prog.mass_erase()?;
+        stm32prog.reset(stlink)?;
+        stm32prog.disconnect();
+    }
 
     Ok(())
 }

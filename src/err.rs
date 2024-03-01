@@ -68,6 +68,7 @@ pub enum CubeProgrammerError {
     SecurityError = -14,
     FrequencyError = -15,
     RdpEnabledError = -16,
+    UnknownError = -17,
 }
 
 impl Display for CubeProgrammerError {
@@ -97,6 +98,7 @@ impl Display for CubeProgrammerError {
             CubeProgrammerError::SecurityError => write!(f, "Security error"),
             CubeProgrammerError::FrequencyError => write!(f, "Frequency error"),
             CubeProgrammerError::RdpEnabledError => write!(f, "RDP Enabled error"),
+            CubeProgrammerError::UnknownError => write!(f, "Unknown error"),
         }
     }
 }
@@ -120,7 +122,7 @@ impl From<i32> for CubeProgrammerError {
             -14 => CubeProgrammerError::SecurityError,
             -15 => CubeProgrammerError::FrequencyError,
             -16 => CubeProgrammerError::RdpEnabledError,
-            _ => panic!("Invalid value for CubeProgrammerError"),
+            _ => CubeProgrammerError::UnknownError,
         }
     }
 }

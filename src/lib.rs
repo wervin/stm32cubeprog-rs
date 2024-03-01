@@ -86,7 +86,10 @@ type GetStLinkList = unsafe extern "C" fn(
     shared: std::os::raw::c_int,
 ) -> std::os::raw::c_int;
 type ConnectStLink =
-    unsafe extern "C" fn(debug_connect_parameters: DebugConnectParameters) -> ::std::os::raw::c_int;
+    unsafe extern "C" fn(debug_connect_parameters: DebugConnectParameters) -> std::os::raw::c_int;
+type Disconnect = unsafe extern "C" fn();
+type Reset = unsafe extern "C" fn(reset_mode: DebugResetMode) -> std::os::raw::c_int;
+type MassErase = unsafe extern "C" fn() -> std::os::raw::c_int;
 
 pub struct VTable {
     set_loaders_path: libloading::os::unix::Symbol<SetLoaderPath>,
@@ -94,6 +97,9 @@ pub struct VTable {
     set_verbosity_level: libloading::os::unix::Symbol<SetVerbosityLevel>,
     get_stlink_list: libloading::os::unix::Symbol<GetStLinkList>,
     connect_stlink: libloading::os::unix::Symbol<ConnectStLink>,
+    disconnect: libloading::os::unix::Symbol<Disconnect>,
+    reset: libloading::os::unix::Symbol<Reset>,
+    mass_erase: libloading::os::unix::Symbol<MassErase>,
 }
 
 impl VTable {
@@ -113,22 +119,68 @@ impl VTable {
         let connect_stlink: libloading::Symbol<ConnectStLink> =
             unsafe { library.get(b"connectStLink\0")? };
         let connect_stlink = unsafe { connect_stlink.into_raw() };
-
+        let disconnect: libloading::Symbol<Disconnect> = unsafe { library.get(b"disconnect\0")? };
+        let disconnect = unsafe { disconnect.into_raw() };
+        let reset: libloading::Symbol<Reset> = unsafe { library.get(b"reset\0")? };
+        let reset = unsafe { reset.into_raw() };
+        let mass_erase: libloading::Symbol<MassErase> = unsafe { library.get(b"massErase\0")? };
+        let mass_erase = unsafe { mass_erase.into_raw() };
         Ok(VTable {
             set_loaders_path,
             set_display_callbacks,
             set_verbosity_level,
             get_stlink_list,
             connect_stlink,
+            disconnect,
+            reset,
+            mass_erase
         })
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct STLink {
-    serial_number: String,
-    firmware_version: String,
-    board: String,
     debug_connect_parameters: DebugConnectParameters,
+}
+
+impl STLink {
+    pub fn serial_number(&self) -> Result<String, err::Error> {
+        Ok(String::from_utf8(
+            self.debug_connect_parameters
+                .serial_number
+                .iter()
+                .map(|&c| c as u8)
+                .collect(),
+        )?)
+    }
+
+    pub fn firmware_version(&self) -> Result<String, err::Error> {
+        Ok(String::from_utf8(
+            self.debug_connect_parameters
+                .firmware_version
+                .iter()
+                .map(|&c| c as u8)
+                .collect(),
+        )?)
+    }
+
+    pub fn board(&self) -> Result<String, err::Error> {
+        Ok(String::from_utf8(
+            self.debug_connect_parameters
+                .board
+                .iter()
+                .map(|&c| c as u8)
+                .collect(),
+        )?)
+    }
+
+    pub fn reset_mode(&mut self, reset_mode: DebugResetMode) {
+        self.debug_connect_parameters.reset_mode = reset_mode;
+    }
+
+    pub fn connection_mode(&mut self, connection_mode: DebugConnectMode) {
+        self.debug_connect_parameters.connection_mode = connection_mode
+    }
 }
 
 impl std::fmt::Display for STLink {
@@ -136,7 +188,9 @@ impl std::fmt::Display for STLink {
         write!(
             f,
             "Serial Number: {}, Firmware Version: {}, Board: {}",
-            self.serial_number, self.firmware_version, self.board
+            self.serial_number().unwrap_or("undefined".into()),
+            self.firmware_version().unwrap_or("undefined".into()),
+            self.board().unwrap_or("undefined".into()),
         )
     }
 }
@@ -203,7 +257,7 @@ impl STM32CubeProg {
         Ok(STM32CubeProg { library, vtable })
     }
 
-    pub fn discover(self) -> Result<Vec<STLink>, err::Error> {
+    pub fn discover(&self) -> Result<Vec<STLink>, err::Error> {
         let mut debug_connect_parameters = 0 as *mut DebugConnectParameters;
         let stlink_count =
             unsafe { (self.vtable.get_stlink_list)(&mut debug_connect_parameters, 0) };
@@ -214,24 +268,38 @@ impl STM32CubeProg {
         params_slice
             .iter()
             .map(|param| -> Result<STLink, err::Error> {
-                let serial_number =
-                    String::from_utf8(param.serial_number.iter().map(|&c| c as u8).collect())?;
-                let firmware_version =
-                    String::from_utf8(param.firmware_version.iter().map(|&c| c as u8).collect())?;
-                let board = String::from_utf8(param.board.iter().map(|&c| c as u8).collect())?;
                 let debug_connect_parameters = param.clone();
                 Ok(STLink {
-                    serial_number,
-                    firmware_version,
-                    board,
                     debug_connect_parameters,
                 })
             })
             .collect::<Result<Vec<STLink>, err::Error>>()
     }
 
-    pub fn connect(self, stlink: STLink) -> Result<(), err::Error> {
+    pub fn connect(&self, stlink: &STLink) -> Result<(), err::Error> {
         let error = unsafe { (self.vtable.connect_stlink)(stlink.debug_connect_parameters) };
+        if error == 0 {
+            Ok(())
+        } else {
+            Err(err::CubeProgrammerError::from(error).into())
+        }
+    }
+
+    pub fn disconnect(&self) {
+        unsafe { (self.vtable.disconnect)() };
+    }
+
+    pub fn reset(&self, stlink: &STLink) -> Result<(), err::Error> {
+        let error = unsafe { (self.vtable.reset)(stlink.debug_connect_parameters.reset_mode) };
+        if error == 0 {
+            Ok(())
+        } else {
+            Err(err::CubeProgrammerError::from(error).into())
+        }
+    }
+
+    pub fn mass_erase(&self) -> Result<(), err::Error> {
+        let error = unsafe { (self.vtable.mass_erase)() };
         if error == 0 {
             Ok(())
         } else {
