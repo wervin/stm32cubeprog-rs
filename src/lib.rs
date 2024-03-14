@@ -1,5 +1,12 @@
 pub mod err;
 
+#[cfg(unix)]
+#[allow(non_camel_case_types)]
+pub type wchar = u32;
+#[cfg(windows)]
+#[allow(non_camel_case_types)]
+pub type wchar = u16;
+
 #[repr(C)]
 pub struct DisplayCallbacks {
     pub init_progress_bar: extern "C" fn(),
@@ -90,6 +97,13 @@ type ConnectStLink =
 type Disconnect = unsafe extern "C" fn();
 type Reset = unsafe extern "C" fn(reset_mode: DebugResetMode) -> std::os::raw::c_int;
 type MassErase = unsafe extern "C" fn() -> std::os::raw::c_int;
+type DownloadFile = unsafe extern "C" fn(
+    file_path: *const wchar,
+    address: std::os::raw::c_uint,
+    skip_erase: std::os::raw::c_uint,
+    verify: std::os::raw::c_uint,
+    path: *const wchar,
+) -> std::os::raw::c_int;
 
 pub struct VTable {
     set_loaders_path: libloading::os::unix::Symbol<SetLoaderPath>,
@@ -100,6 +114,7 @@ pub struct VTable {
     disconnect: libloading::os::unix::Symbol<Disconnect>,
     reset: libloading::os::unix::Symbol<Reset>,
     mass_erase: libloading::os::unix::Symbol<MassErase>,
+    download_file: libloading::os::unix::Symbol<DownloadFile>,
 }
 
 impl VTable {
@@ -125,6 +140,9 @@ impl VTable {
         let reset = unsafe { reset.into_raw() };
         let mass_erase: libloading::Symbol<MassErase> = unsafe { library.get(b"massErase\0")? };
         let mass_erase = unsafe { mass_erase.into_raw() };
+        let download_file: libloading::Symbol<DownloadFile> =
+            unsafe { library.get(b"downloadFile\0")? };
+        let download_file = unsafe { download_file.into_raw() };
         Ok(VTable {
             set_loaders_path,
             set_display_callbacks,
@@ -133,7 +151,8 @@ impl VTable {
             connect_stlink,
             disconnect,
             reset,
-            mass_erase
+            mass_erase,
+            download_file,
         })
     }
 }
@@ -202,46 +221,37 @@ pub struct STM32CubeProg {
 }
 
 impl STM32CubeProg {
-    #[cfg(target_os = "linux")]
-    fn library_path(path: &str) -> Result<String, std::fmt::Error> {
-        Ok(format!("{path}/lib/libCubeProgrammer_API.so"))
+    #[cfg(unix)]
+    fn library_path(path: &std::path::Path) -> std::path::PathBuf {
+        path.join("lib/libCubeProgrammer_API.so")
     }
 
-    #[cfg(target_os = "windows")]
-    fn library_path(path: &str) -> Result<String, std::fmt::Error> {
-        Ok(format!("{path}/lib/libCubeProgrammer_API.so"))
+    #[cfg(windows)]
+    fn library_path(path: &std::path::Path) -> std::path::PathBuf {
+        path.join("lib/libCubeProgrammer_API.so")
     }
 
-    #[cfg(all(not(target_os = "linux"), not(target_os = "windows")))]
-    fn library_path(_path: &str) -> Result<String, std::fmt::Error> {
-        Err(Box::new(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
+    #[cfg(unix)]
+    fn flashloader_path(path: &std::path::Path) -> std::path::PathBuf {
+        path.join("bin")
     }
 
-    #[cfg(target_os = "linux")]
-    fn flashloader_path(path: &str) -> Result<String, std::fmt::Error> {
-        Ok(format!("{path}/bin"))
+    #[cfg(windows)]
+    fn flashloader_path(path: &std::path::Path) -> std::path::PathBuf {
+        path.join("bin")
     }
 
-    #[cfg(target_os = "windows")]
-    fn flashloader_path(path: &str) -> Result<String, std::fmt::Error> {
-        Ok(format!("{path}/bin"))
-    }
-
-    #[cfg(all(not(target_os = "linux"), not(target_os = "windows")))]
-    fn flashloader_path(_path: &str) -> Result<String, std::fmt::Error> {
-        Err(Box::new(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
-    }
-
-    pub fn new(path: &str) -> Result<Self, err::Error> {
-        let library = unsafe { libloading::Library::new(Self::library_path(path)?)? };
+    pub fn new<P: AsRef<std::path::Path>>(path: P) -> Result<Self, err::Error> {
+        let library = unsafe { libloading::Library::new(Self::library_path(path.as_ref()))? };
         let vtable = VTable::new(&library)?;
 
         unsafe {
-            (vtable.set_loaders_path)(Self::flashloader_path(path)?.as_bytes().as_ptr() as *const i8)
+            (vtable.set_loaders_path)(
+                Self::flashloader_path(path.as_ref())
+                    .as_os_str()
+                    .as_encoded_bytes()
+                    .as_ptr() as *const i8,
+            )
         };
 
         let cb: DisplayCallbacks = DisplayCallbacks {
@@ -306,6 +316,33 @@ impl STM32CubeProg {
             Err(err::CubeProgrammerError::from(error).into())
         }
     }
+
+    pub fn download<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+        address: Option<u32>,
+        skip_erase: Option<bool>,
+        verify: Option<bool>,
+    ) -> Result<(), err::Error> {
+        let c_path = widestring::WideCString::from_os_str(
+            std::fs::canonicalize(path.as_ref())?.as_os_str(),
+        )?;
+
+        let error = unsafe {
+            (self.vtable.download_file)(
+                c_path.as_ptr(),
+                address.unwrap_or(0),
+                skip_erase.unwrap_or(true).into(),
+                verify.unwrap_or(true).into(),
+                std::ptr::null(),
+            )
+        };
+        if error == 0 {
+            Ok(())
+        } else {
+            Err(err::CubeProgrammerError::from(error).into())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -317,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     fn open_library() {
         let home_dir = std::env::var_os("HOME")
             .map(std::path::PathBuf::from)

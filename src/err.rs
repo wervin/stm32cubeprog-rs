@@ -7,6 +7,8 @@ pub enum Error {
     FormatError(std::fmt::Error),
     FromUtf8Error(std::string::FromUtf8Error),
     CubeProgrammerError(CubeProgrammerError),
+    IoError(std::io::Error),
+    WideStringError(widestring::error::ContainsNul<crate::wchar>),
     UnsupportedPlatform,
 }
 
@@ -20,6 +22,8 @@ impl Display for Error {
                 write!(f, ": The target system is not supported by visa")
             }
             self::Error::CubeProgrammerError(e) => write!(f, "Cube Programmer error: {}", e),
+            self::Error::IoError(e) => write!(f, "IO error: {}", e),
+            self::Error::WideStringError(e) => write!(f, "Wide string error: {}", e),
         }
     }
 }
@@ -45,6 +49,18 @@ impl From<std::string::FromUtf8Error> for Error {
 impl From<CubeProgrammerError> for Error {
     fn from(err: CubeProgrammerError) -> Error {
         Error::CubeProgrammerError(err)
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Error {
+        Error::IoError(err)
+    }
+}
+
+impl From<widestring::error::ContainsNul<crate::wchar>> for Error {
+    fn from(err: widestring::error::ContainsNul<crate::wchar>) -> Error {
+        Error::WideStringError(err)
     }
 }
 

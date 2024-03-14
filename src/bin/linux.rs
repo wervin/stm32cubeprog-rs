@@ -1,4 +1,3 @@
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let home_dir = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
@@ -15,6 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         stlink.connection_mode(stm32cubeprog_rs::DebugConnectMode::UnderReset);
         stm32prog.connect(stlink)?;
         stm32prog.mass_erase()?;
+        stm32prog.download("tests/demo.hex", None, None, None)?;
         stm32prog.reset(stlink)?;
         stm32prog.disconnect();
     }
