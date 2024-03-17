@@ -120,21 +120,24 @@ type DownloadFile = unsafe extern "C" fn(
     path: *const wchar,
 ) -> std::os::raw::c_int;
 type GetDeviceGeneralInfo = unsafe extern "C" fn() -> *mut DeviceGeneralInfo;
-
-// extern "C" {
-//     pub fn readMemory(
-//         address: ::std::os::raw::c_uint,
-//         data: *mut *mut ::std::os::raw::c_uchar,
-//         size: ::std::os::raw::c_uint,
-//     ) -> ::std::os::raw::c_int;
-// }
-// extern "C" {
-//     pub fn writeMemory(
-//         address: ::std::os::raw::c_uint,
-//         data: *mut ::std::os::raw::c_char,
-//         size: ::std::os::raw::c_uint,
-//     ) -> ::std::os::raw::c_int;
-// }
+type ReadMemory = unsafe extern "C" fn(
+    address: ::std::os::raw::c_uint,
+    data: *mut *mut ::std::os::raw::c_uchar,
+    size: ::std::os::raw::c_uint,
+) -> ::std::os::raw::c_int;
+type WriteMemory = unsafe extern "C" fn(
+    address: ::std::os::raw::c_uint,
+    data: *mut ::std::os::raw::c_char,
+    size: ::std::os::raw::c_uint,
+) -> ::std::os::raw::c_int;
+type ReadCoreRegister = unsafe extern "C" fn(
+    register: std::os::raw::c_uint,
+    data: *mut std::os::raw::c_uint,
+) -> ::std::os::raw::c_int;
+type WriteCoreRegister = unsafe extern "C" fn(
+    register: std::os::raw::c_uint,
+    data: std::os::raw::c_uint,
+) -> ::std::os::raw::c_int;
 
 pub struct VTable {
     set_loaders_path: libloading::os::unix::Symbol<SetLoaderPath>,
@@ -147,6 +150,10 @@ pub struct VTable {
     mass_erase: libloading::os::unix::Symbol<MassErase>,
     download_file: libloading::os::unix::Symbol<DownloadFile>,
     get_device_general_info: libloading::os::unix::Symbol<GetDeviceGeneralInfo>,
+    read_memory: libloading::os::unix::Symbol<ReadMemory>,
+    write_memory: libloading::os::unix::Symbol<WriteMemory>,
+    read_core_register: libloading::os::unix::Symbol<ReadCoreRegister>,
+    write_core_register: libloading::os::unix::Symbol<WriteCoreRegister>,
 }
 
 impl VTable {
@@ -178,6 +185,18 @@ impl VTable {
         let get_device_general_info: libloading::Symbol<GetDeviceGeneralInfo> =
             unsafe { library.get(b"getDeviceGeneralInf\0")? };
         let get_device_general_info = unsafe { get_device_general_info.into_raw() };
+        let read_memory: libloading::Symbol<ReadMemory> = unsafe { library.get(b"readMemory\0")? };
+        let read_memory = unsafe { read_memory.into_raw() };
+        let write_memory: libloading::Symbol<WriteMemory> =
+            unsafe { library.get(b"writeMemory\0")? };
+        let write_memory = unsafe { write_memory.into_raw() };
+        let read_core_register: libloading::Symbol<ReadCoreRegister> =
+            unsafe { library.get(b"readCortexReg\0")? };
+        let read_core_register = unsafe { read_core_register.into_raw() };
+        let write_core_register: libloading::Symbol<WriteCoreRegister> =
+            unsafe { library.get(b"writeCortexRegistres\0")? };
+        let write_core_register = unsafe { write_core_register.into_raw() };
+
         Ok(VTable {
             set_loaders_path,
             set_display_callbacks,
@@ -189,6 +208,10 @@ impl VTable {
             mass_erase,
             download_file,
             get_device_general_info,
+            read_memory,
+            write_memory,
+            read_core_register,
+            write_core_register,
         })
     }
 }
@@ -364,6 +387,48 @@ pub struct STM32CubeProg {
     vtable: VTable,
 }
 
+pub enum Register {
+    R0,
+    R1,
+    R2,
+    R3,
+    R4,
+    R5,
+    R6,
+    R7,
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    SP,
+    LR,
+    PC,
+}
+
+impl From<Register> for u32 {
+    fn from(register: Register) -> Self {
+        match register {
+            Register::R0 => 0,
+            Register::R1 => 1,
+            Register::R2 => 2,
+            Register::R3 => 3,
+            Register::R4 => 4,
+            Register::R5 => 5,
+            Register::R6 => 6,
+            Register::R7 => 7,
+            Register::R8 => 8,
+            Register::R9 => 9,
+            Register::R10 => 10,
+            Register::R11 => 11,
+            Register::R12 => 12,
+            Register::SP => 13,
+            Register::LR => 14,
+            Register::PC => 15,
+        }
+    }
+}
+
 impl STM32CubeProg {
     #[cfg(unix)]
     fn library_path(path: &std::path::Path) -> std::path::PathBuf {
@@ -496,6 +561,25 @@ impl STM32CubeProg {
                 device_general_info: value.clone(),
             }),
             None => Err(err::CubeProgrammerError::NoDeviceFound.into()),
+        }
+    }
+
+    pub fn read_core_register(&self, register: Register) -> Result<u32, err::Error> {
+        let mut data = 0;
+        let error = unsafe { (self.vtable.read_core_register)(register.into(), &mut data) };
+        if error == 0 {
+            Ok(data)
+        } else {
+            Err(err::CubeProgrammerError::from(error).into())
+        }
+    }
+
+    pub fn write_core_register(&self, register: Register, data: u32) -> Result<(), err::Error> {
+        let error = unsafe { (self.vtable.write_core_register)(register.into(), data) };
+        if error == 0 {
+            Ok(())
+        } else {
+            Err(err::CubeProgrammerError::from(error).into())
         }
     }
 }

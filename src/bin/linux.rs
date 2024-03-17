@@ -17,6 +17,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let device_info = stm32prog.device_info()?;
         println!("{device_info}");
 
+        stm32prog.write_core_register(stm32cubeprog_rs::Register::R0, 0xAABBCCDD)?;
+        let data = stm32prog.read_core_register(stm32cubeprog_rs::Register::R0)?;
+        println!("data 0x{data:X}");
+
         // stm32prog.mass_erase()?;
         // stm32prog.download("tests/demo.hex", None, None, None)?;
         stm32prog.reset(stlink)?;
