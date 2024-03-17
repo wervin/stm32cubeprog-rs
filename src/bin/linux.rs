@@ -13,8 +13,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         stlink.reset_mode(stm32cubeprog_rs::DebugResetMode::HardwareReset);
         stlink.connection_mode(stm32cubeprog_rs::DebugConnectMode::UnderReset);
         stm32prog.connect(stlink)?;
-        stm32prog.mass_erase()?;
-        stm32prog.download("tests/demo.hex", None, None, None)?;
+
+        let device_info = stm32prog.device_info()?;
+        println!("{device_info}");
+
+        // stm32prog.mass_erase()?;
+        // stm32prog.download("tests/demo.hex", None, None, None)?;
         stm32prog.reset(stlink)?;
         stm32prog.disconnect();
     }

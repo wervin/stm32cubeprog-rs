@@ -65,6 +65,21 @@ pub struct Frequencies {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct DeviceGeneralInfo {
+    pub device_id: ::std::os::raw::c_ushort,
+    pub flash_size: ::std::os::raw::c_int,
+    pub bootloader_version: ::std::os::raw::c_int,
+    pub category: [::std::os::raw::c_char; 4usize],
+    pub cpu: [::std::os::raw::c_char; 20usize],
+    pub name: [::std::os::raw::c_char; 100usize],
+    pub series: [::std::os::raw::c_char; 100usize],
+    pub description: [::std::os::raw::c_char; 150usize],
+    pub revision_id: [::std::os::raw::c_char; 8usize],
+    pub board: [::std::os::raw::c_char; 100usize],
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct DebugConnectParameters {
     pub dbg_port: DebugPort,
     pub index: std::os::raw::c_int,
@@ -104,6 +119,22 @@ type DownloadFile = unsafe extern "C" fn(
     verify: std::os::raw::c_uint,
     path: *const wchar,
 ) -> std::os::raw::c_int;
+type GetDeviceGeneralInfo = unsafe extern "C" fn() -> *mut DeviceGeneralInfo;
+
+// extern "C" {
+//     pub fn readMemory(
+//         address: ::std::os::raw::c_uint,
+//         data: *mut *mut ::std::os::raw::c_uchar,
+//         size: ::std::os::raw::c_uint,
+//     ) -> ::std::os::raw::c_int;
+// }
+// extern "C" {
+//     pub fn writeMemory(
+//         address: ::std::os::raw::c_uint,
+//         data: *mut ::std::os::raw::c_char,
+//         size: ::std::os::raw::c_uint,
+//     ) -> ::std::os::raw::c_int;
+// }
 
 pub struct VTable {
     set_loaders_path: libloading::os::unix::Symbol<SetLoaderPath>,
@@ -115,6 +146,7 @@ pub struct VTable {
     reset: libloading::os::unix::Symbol<Reset>,
     mass_erase: libloading::os::unix::Symbol<MassErase>,
     download_file: libloading::os::unix::Symbol<DownloadFile>,
+    get_device_general_info: libloading::os::unix::Symbol<GetDeviceGeneralInfo>,
 }
 
 impl VTable {
@@ -143,6 +175,9 @@ impl VTable {
         let download_file: libloading::Symbol<DownloadFile> =
             unsafe { library.get(b"downloadFile\0")? };
         let download_file = unsafe { download_file.into_raw() };
+        let get_device_general_info: libloading::Symbol<GetDeviceGeneralInfo> =
+            unsafe { library.get(b"getDeviceGeneralInf\0")? };
+        let get_device_general_info = unsafe { get_device_general_info.into_raw() };
         Ok(VTable {
             set_loaders_path,
             set_display_callbacks,
@@ -153,6 +188,7 @@ impl VTable {
             reset,
             mass_erase,
             download_file,
+            get_device_general_info,
         })
     }
 }
@@ -210,6 +246,114 @@ impl std::fmt::Display for STLink {
             self.serial_number().unwrap_or("undefined".into()),
             self.firmware_version().unwrap_or("undefined".into()),
             self.board().unwrap_or("undefined".into()),
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DeviceInfo {
+    device_general_info: DeviceGeneralInfo,
+}
+
+impl DeviceInfo {
+    pub fn category(&self) -> Result<String, err::Error> {
+        Ok(String::from_utf8(
+            self.device_general_info
+                .category
+                .iter()
+                .map(|&c| c as u8)
+                .collect(),
+        )?)
+    }
+
+    pub fn cpu(&self) -> Result<String, err::Error> {
+        Ok(String::from_utf8(
+            self.device_general_info
+                .cpu
+                .iter()
+                .map(|&c| c as u8)
+                .collect(),
+        )?)
+    }
+
+    pub fn name(&self) -> Result<String, err::Error> {
+        Ok(String::from_utf8(
+            self.device_general_info
+                .name
+                .iter()
+                .map(|&c| c as u8)
+                .collect(),
+        )?)
+    }
+
+    pub fn series(&self) -> Result<String, err::Error> {
+        Ok(String::from_utf8(
+            self.device_general_info
+                .series
+                .iter()
+                .map(|&c| c as u8)
+                .collect(),
+        )?)
+    }
+
+    pub fn description(&self) -> Result<String, err::Error> {
+        Ok(String::from_utf8(
+            self.device_general_info
+                .description
+                .iter()
+                .map(|&c| c as u8)
+                .collect(),
+        )?)
+    }
+
+    pub fn revision_id(&self) -> Result<String, err::Error> {
+        Ok(String::from_utf8(
+            self.device_general_info
+                .revision_id
+                .iter()
+                .map(|&c| c as u8)
+                .collect(),
+        )?)
+    }
+
+    pub fn board(&self) -> Result<String, err::Error> {
+        Ok(String::from_utf8(
+            self.device_general_info
+                .board
+                .iter()
+                .map(|&c| c as u8)
+                .collect(),
+        )?)
+    }
+
+    pub fn device_id(&self) -> i32 {
+        self.device_general_info.device_id.into()
+    }
+
+    pub fn flash_size(&self) -> i32 {
+        self.device_general_info.flash_size
+    }
+
+    pub fn bootloader_version(&self) -> i32 {
+        self.device_general_info.bootloader_version
+    }
+}
+
+impl std::fmt::Display for DeviceInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "Category: {}, Cpu: {}, Name: {}, Series: {}, Description: {}, Revision Id: {}, Board: {}, Device Id: 0x{:X}, Flash Size: 0x{:X}, Bootloader Version: 0x{:X}",
+            self.category().unwrap_or("undefined".into()),
+            self.cpu().unwrap_or("undefined".into()),
+            self.name().unwrap_or("undefined".into()),
+            self.series().unwrap_or("undefined".into()),
+            self.description().unwrap_or("undefined".into()),
+            self.revision_id().unwrap_or("undefined".into()),
+            self.board().unwrap_or("undefined".into()),
+            self.device_id(),
+            self.flash_size(),
+            self.bootloader_version()
         )
     }
 }
@@ -341,6 +485,17 @@ impl STM32CubeProg {
             Ok(())
         } else {
             Err(err::CubeProgrammerError::from(error).into())
+        }
+    }
+
+    pub fn device_info(&self) -> Result<DeviceInfo, err::Error> {
+        let device_general_info = unsafe { (self.vtable.get_device_general_info)().as_ref() };
+
+        match device_general_info {
+            Some(value) => Ok(DeviceInfo {
+                device_general_info: value.clone(),
+            }),
+            None => Err(err::CubeProgrammerError::NoDeviceFound.into()),
         }
     }
 }

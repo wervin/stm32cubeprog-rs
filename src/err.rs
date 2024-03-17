@@ -19,7 +19,7 @@ impl Display for Error {
             self::Error::FormatError(e) => write!(f, "Format error: {}", e),
             self::Error::FromUtf8Error(e) => write!(f, "UTF-8 conversion error: {}", e),
             self::Error::UnsupportedPlatform => {
-                write!(f, ": The target system is not supported by visa")
+                write!(f, "The target system is not supported")
             }
             self::Error::CubeProgrammerError(e) => write!(f, "Cube Programmer error: {}", e),
             self::Error::IoError(e) => write!(f, "IO error: {}", e),
