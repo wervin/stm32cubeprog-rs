@@ -1,6 +1,6 @@
 [package]
 name = "stm32cubeprog-rs"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["Vincent Werner <wervin.dev@gmail.com>"]
 description = "Rust API for STM32CubeProgrammer"
 repository = "https://github.com/wervin/stm32cubeprog-rs"
