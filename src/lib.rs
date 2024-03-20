@@ -127,7 +127,7 @@ type ReadMemory = unsafe extern "C" fn(
 ) -> ::std::os::raw::c_int;
 type WriteMemory = unsafe extern "C" fn(
     address: ::std::os::raw::c_uint,
-    data: *mut ::std::os::raw::c_char,
+    data: *mut ::std::os::raw::c_uchar,
     size: ::std::os::raw::c_uint,
 ) -> ::std::os::raw::c_int;
 type ReadCoreRegister = unsafe extern "C" fn(
@@ -477,7 +477,7 @@ impl STM32CubeProg {
     }
 
     pub fn discover(&self) -> Result<Vec<STLink>, err::Error> {
-        let mut debug_connect_parameters = 0 as *mut DebugConnectParameters;
+        let mut debug_connect_parameters = std::ptr::null_mut();
         let stlink_count =
             unsafe { (self.vtable.get_stlink_list)(&mut debug_connect_parameters, 0) };
 
@@ -576,6 +576,60 @@ impl STM32CubeProg {
 
     pub fn write_core_register(&self, register: Register, data: u32) -> Result<(), err::Error> {
         let error = unsafe { (self.vtable.write_core_register)(register.into(), data) };
+        if error == 0 {
+            Ok(())
+        } else {
+            Err(err::CubeProgrammerError::from(error).into())
+        }
+    }
+
+    pub fn read_memory8(&self, address: u32, size: u32) -> Result<Vec<u8>, err::Error> {
+        let mut data = std::ptr::null_mut();
+        let error = unsafe { (self.vtable.read_memory)(address, &mut data, size) };
+        if error == 0 {
+            let data: &mut [u8] = unsafe { core::slice::from_raw_parts_mut(data, size as usize) };
+            Ok(data.to_vec())
+        } else {
+            Err(err::CubeProgrammerError::from(error).into())
+        }
+    }
+
+    pub fn read_memory32(&self, address: u32, size: u32) -> Result<Vec<u32>, err::Error> {
+        let mut data = std::ptr::null_mut();
+        let error = unsafe { (self.vtable.read_memory)(address, &mut data, size * 4) };
+        if error == 0 {
+            let data: &mut [u8] =
+                unsafe { core::slice::from_raw_parts_mut(data, (size * 4) as usize) };
+            data.chunks(4)
+                .map(|chunk| -> Result<u32, err::Error> {
+                    let chunk = std::convert::TryInto::try_into(chunk)?;
+                    Ok(u32::from_le_bytes(chunk))
+                })
+                .collect::<Result<Vec<u32>, err::Error>>()
+        } else {
+            Err(err::CubeProgrammerError::from(error).into())
+        }
+    }
+
+    pub fn write_memory8(&self, address: u32, data: Vec<u8>) -> Result<(), err::Error> {
+        let size: u32 = std::convert::TryInto::try_into(data.len())?;
+
+        let error = unsafe { (self.vtable.write_memory)(address, data.clone().as_mut_ptr(), size) };
+        if error == 0 {
+            Ok(())
+        } else {
+            Err(err::CubeProgrammerError::from(error).into())
+        }
+    }
+
+    pub fn write_memory32(&self, address: u32, data_u32: Vec<u32>) -> Result<(), err::Error> {
+        let size: u32 = std::convert::TryInto::try_into(data_u32.len())?;
+        let mut data_u8: Vec<u8> = Vec::new();
+        for &num in &data_u32 {
+            data_u8.extend_from_slice(&num.to_le_bytes());
+        }
+
+        let error = unsafe { (self.vtable.write_memory)(address, data_u8.as_mut_ptr(), size * 4) };
         if error == 0 {
             Ok(())
         } else {

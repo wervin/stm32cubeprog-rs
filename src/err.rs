@@ -9,6 +9,8 @@ pub enum Error {
     CubeProgrammerError(CubeProgrammerError),
     IoError(std::io::Error),
     WideStringError(widestring::error::ContainsNul<crate::wchar>),
+    SliceConversionError(std::array::TryFromSliceError),
+    IntConversionError(std::num::TryFromIntError),
     UnsupportedPlatform,
 }
 
@@ -24,6 +26,8 @@ impl Display for Error {
             self::Error::CubeProgrammerError(e) => write!(f, "Cube Programmer error: {}", e),
             self::Error::IoError(e) => write!(f, "IO error: {}", e),
             self::Error::WideStringError(e) => write!(f, "Wide string error: {}", e),
+            self::Error::SliceConversionError(e) => write!(f, "Slice conversion error: {}", e),
+            self::Error::IntConversionError(e) => write!(f, "Int conversion error: {}", e),
         }
     }
 }
@@ -61,6 +65,18 @@ impl From<std::io::Error> for Error {
 impl From<widestring::error::ContainsNul<crate::wchar>> for Error {
     fn from(err: widestring::error::ContainsNul<crate::wchar>) -> Error {
         Error::WideStringError(err)
+    }
+}
+
+impl From<std::array::TryFromSliceError> for Error {
+    fn from(err: std::array::TryFromSliceError) -> Error {
+        Error::SliceConversionError(err)
+    }
+}
+
+impl From<std::num::TryFromIntError> for Error {
+    fn from(err: std::num::TryFromIntError) -> Error {
+        Error::IntConversionError(err)
     }
 }
 
