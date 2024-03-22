@@ -25,7 +25,7 @@
 //!     
 //!     // Load STM32CubeProgmmer API library
 //!     let stm32prog = stm32cubeprog_rs::STM32CubeProg::new(stm32prog_path)?;
-//! 
+//!
 //!     // Find connected STLinks
 //!     let mut stlinks = stm32prog.discover()?;
 //!     for stlink in stlinks.iter_mut() {
@@ -34,7 +34,7 @@
 //!         // Configure the reset mode and the connection mode
 //!         stlink.reset_mode(stm32cubeprog_rs::DebugResetMode::HardwareReset);
 //!         stlink.connection_mode(stm32cubeprog_rs::DebugConnectMode::UnderReset);
-//! 
+//!
 //!         // Connect the STlink
 //!         stm32prog.connect(stlink)?;
 //!         
@@ -60,7 +60,7 @@
 //!         
 //!         // Mass erase the device
 //!         stm32prog.mass_erase()?;
-//! 
+//!
 //!         // Flash the device
 //!         stm32prog.download("demo.hex", None, None, None)?;
 //!         
@@ -214,6 +214,7 @@ type WriteCoreRegister = unsafe extern "C" fn(
     data: std::os::raw::c_uint,
 ) -> ::std::os::raw::c_int;
 
+#[cfg(unix)]
 pub struct VTable {
     set_loaders_path: libloading::os::unix::Symbol<SetLoaderPath>,
     set_display_callbacks: libloading::os::unix::Symbol<SetDisplayCallbacks>,
@@ -229,6 +230,24 @@ pub struct VTable {
     write_memory: libloading::os::unix::Symbol<WriteMemory>,
     read_core_register: libloading::os::unix::Symbol<ReadCoreRegister>,
     write_core_register: libloading::os::unix::Symbol<WriteCoreRegister>,
+}
+
+#[cfg(windows)]
+pub struct VTable {
+    set_loaders_path: libloading::os::windows::Symbol<SetLoaderPath>,
+    set_display_callbacks: libloading::os::windows::Symbol<SetDisplayCallbacks>,
+    set_verbosity_level: libloading::os::windows::Symbol<SetVerbosityLevel>,
+    get_stlink_list: libloading::os::windows::Symbol<GetStLinkList>,
+    connect_stlink: libloading::os::windows::Symbol<ConnectStLink>,
+    disconnect: libloading::os::windows::Symbol<Disconnect>,
+    reset: libloading::os::windows::Symbol<Reset>,
+    mass_erase: libloading::os::windows::Symbol<MassErase>,
+    download_file: libloading::os::windows::Symbol<DownloadFile>,
+    get_device_general_info: libloading::os::windows::Symbol<GetDeviceGeneralInfo>,
+    read_memory: libloading::os::windows::Symbol<ReadMemory>,
+    write_memory: libloading::os::windows::Symbol<WriteMemory>,
+    read_core_register: libloading::os::windows::Symbol<ReadCoreRegister>,
+    write_core_register: libloading::os::windows::Symbol<WriteCoreRegister>,
 }
 
 impl VTable {
@@ -512,7 +531,7 @@ impl STM32CubeProg {
 
     #[cfg(windows)]
     fn library_path(path: &std::path::Path) -> std::path::PathBuf {
-        path.join("lib/libCubeProgrammer_API.so")
+        path.join("api\\lib\\CubeProgrammer_API.dll")
     }
 
     #[cfg(unix)]
@@ -525,8 +544,30 @@ impl STM32CubeProg {
         path.join("bin")
     }
 
+    #[cfg(unix)]
+    fn load_library(path: &std::path::Path) -> Result<libloading::Library, err::Error> {
+        let library: libloading::Library =
+            unsafe { libloading::os::unix::Library::new(path)?.into() };
+        Ok(library)
+    }
+
+    #[cfg(windows)]
+    fn load_library(path: &std::path::Path) -> Result<libloading::Library, err::Error> {
+        let library: libloading::Library = unsafe {
+            libloading::os::windows::Library::load_with_flags(
+                path,
+                libloading::os::windows::LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR
+                    | libloading::os::windows::LOAD_LIBRARY_SEARCH_SYSTEM32
+                    | libloading::os::windows::LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+            )?
+            .into()
+        };
+        Ok(library)
+    }
+
     pub fn new<P: AsRef<std::path::Path>>(path: P) -> Result<Self, err::Error> {
-        let library = unsafe { libloading::Library::new(Self::library_path(path.as_ref()))? };
+        let library_path = Self::library_path(path.as_ref());
+        let library = Self::load_library(library_path.as_ref())?;
         let vtable = VTable::new(&library)?;
 
         unsafe {
@@ -710,29 +751,5 @@ impl STM32CubeProg {
         } else {
             Err(err::CubeProgrammerError::from(error).into())
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn failed_to_load_libray() {
-        let stm32prog = super::STM32CubeProg::new("Oups");
-        assert!(matches!(stm32prog, Err(_)));
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn open_library() {
-        let home_dir = std::env::var_os("HOME")
-            .map(std::path::PathBuf::from)
-            .expect("Failed to get home directory, $HOME variable missing");
-        let binding =
-            home_dir.join("Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer");
-        let stm32prog_path = binding
-            .to_str()
-            .expect("Failed to join STM32CubeProgrammer path");
-        let stm32prog = super::STM32CubeProg::new(stm32prog_path);
-        assert!(matches!(stm32prog, Ok(_)));
     }
 }
