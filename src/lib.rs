@@ -433,6 +433,14 @@ impl STLink {
         )?.trim_matches(char::from(0)).to_owned())
     }
 
+    pub fn set_access_port(&mut self, access_port: i32) {
+        self.debug_connect_parameters.access_port = access_port;
+    }
+
+    pub fn set_frequency(&mut self, frequency: i32) {
+        self.debug_connect_parameters.frequency = frequency;
+    }
+
     pub fn set_reset_mode(&mut self, reset_mode: DebugResetMode) {
         self.debug_connect_parameters.reset_mode = reset_mode;
     }
