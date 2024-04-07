@@ -11,6 +11,7 @@ pub enum Error {
     WideStringError(widestring::error::ContainsNul<crate::wchar>),
     SliceConversionError(std::array::TryFromSliceError),
     IntConversionError(std::num::TryFromIntError),
+    FloatConversionError(std::num::ParseFloatError),
     UnsupportedPlatform,
 }
 
@@ -28,6 +29,7 @@ impl Display for Error {
             self::Error::WideStringError(e) => write!(f, "Wide string error: {}", e),
             self::Error::SliceConversionError(e) => write!(f, "Slice conversion error: {}", e),
             self::Error::IntConversionError(e) => write!(f, "Int conversion error: {}", e),
+            self::Error::FloatConversionError(e) => write!(f, "Float conversion error: {}", e),
         }
     }
 }
@@ -77,6 +79,12 @@ impl From<std::array::TryFromSliceError> for Error {
 impl From<std::num::TryFromIntError> for Error {
     fn from(err: std::num::TryFromIntError) -> Error {
         Error::IntConversionError(err)
+    }
+}
+
+impl From<std::num::ParseFloatError> for Error {
+    fn from(err: std::num::ParseFloatError) -> Error {
+        Error::FloatConversionError(err)
     }
 }
 

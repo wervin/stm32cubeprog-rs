@@ -133,9 +133,34 @@ pub enum DebugResetMode {
 #[derive(Debug, Copy, Clone)]
 pub struct Frequencies {
     pub jtag_freq: [std::os::raw::c_uint; 12usize],
-    pub jtag_freq_number: std::os::raw::c_uint,
+    pub jtag_freq_count: std::os::raw::c_uint,
     pub swd_freq: [std::os::raw::c_uint; 12usize],
-    pub swd_freq_number: std::os::raw::c_uint,
+    pub swd_freq_count: std::os::raw::c_uint,
+}
+
+impl Frequencies {
+    pub fn jtag_frequencies(&self) -> Vec<u32> {
+        let size = std::convert::TryInto::try_into(self.jtag_freq_count).unwrap_or_default();
+        self.jtag_freq.to_vec()[0..size].to_vec()
+    }
+
+    pub fn swd_frequencies(&self) -> Vec<u32> {
+        let size = std::convert::TryInto::try_into(self.swd_freq_count).unwrap_or_default();
+        self.swd_freq.to_vec()[0..size].to_vec()
+    }
+}
+
+impl std::fmt::Display for Frequencies {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "\
+JTAG Frequencies Available: {:?},
+SWD Frequencies Available: {:?}",
+            self.jtag_frequencies(),
+            self.swd_frequencies(),
+        )
+    }
 }
 
 #[repr(C)]
@@ -156,22 +181,22 @@ pub struct DeviceGeneralInfo {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct DebugConnectParameters {
-    pub dbg_port: DebugPort,
+    pub debug_port: DebugPort,
     pub index: std::os::raw::c_int,
     pub serial_number: [std::os::raw::c_char; 33usize],
     pub firmware_version: [std::os::raw::c_char; 20usize],
     pub target_voltage: [std::os::raw::c_char; 5usize],
-    pub access_port_number: std::os::raw::c_int,
+    pub access_port_count: std::os::raw::c_int,
     pub access_port: std::os::raw::c_int,
     pub connection_mode: DebugConnectMode,
     pub reset_mode: DebugResetMode,
-    pub is_old_firmware: std::os::raw::c_int,
-    pub freq: Frequencies,
+    pub old_firmware: std::os::raw::c_int,
+    pub frequencies: Frequencies,
     pub frequency: std::os::raw::c_int,
-    pub is_bridge: std::os::raw::c_int,
+    pub bridge: std::os::raw::c_int,
     pub shared: std::os::raw::c_int,
     pub board: [std::os::raw::c_char; 100usize],
-    pub dbg_sleep: std::os::raw::c_int,
+    pub debug_sleep: std::os::raw::c_int,
     pub speed: std::os::raw::c_int,
 }
 
@@ -316,6 +341,68 @@ pub struct STLink {
 }
 
 impl STLink {
+    pub fn frequencies(&self) -> Frequencies {
+        self.debug_connect_parameters.frequencies
+    }
+
+    pub fn debug_port(&self) -> DebugPort {
+        self.debug_connect_parameters.debug_port
+    }
+
+    pub fn index(&self) -> i32 {
+        self.debug_connect_parameters.index
+    }
+
+    pub fn access_port_count(&self) -> i32 {
+        self.debug_connect_parameters.access_port_count
+    }
+
+    pub fn access_port(&self) -> i32 {
+        self.debug_connect_parameters.access_port
+    }
+
+    pub fn connection_mode(&self) -> DebugConnectMode {
+        self.debug_connect_parameters.connection_mode
+    }
+
+    pub fn reset_mode(&self) -> DebugResetMode {
+        self.debug_connect_parameters.reset_mode
+    }
+
+    pub fn old_firmware(&self) -> bool {
+        self.debug_connect_parameters.old_firmware == 1
+    }
+
+    pub fn frequency(&self) -> i32 {
+        self.debug_connect_parameters.frequency
+    }
+
+    pub fn bridge(&self) -> bool {
+        self.debug_connect_parameters.bridge == 1
+    }
+
+    pub fn shared(&self) -> bool {
+        self.debug_connect_parameters.shared == 1
+    }
+
+    pub fn debug_sleep(&self) -> bool {
+        self.debug_connect_parameters.debug_sleep == 1
+    }
+
+    pub fn speed(&self) -> i32 {
+        self.debug_connect_parameters.speed
+    }
+
+    pub fn target_voltage(&self) -> Result<f32, err::Error> {
+        Ok(String::from_utf8(
+            self.debug_connect_parameters
+                .target_voltage
+                .iter()
+                .map(|&c| c as u8)
+                .collect(),
+        )?.trim_matches(char::from(0)).parse()?)
+    }
+
     pub fn serial_number(&self) -> Result<String, err::Error> {
         Ok(String::from_utf8(
             self.debug_connect_parameters
@@ -323,7 +410,7 @@ impl STLink {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?)
+        )?.trim_matches(char::from(0)).to_owned())
     }
 
     pub fn firmware_version(&self) -> Result<String, err::Error> {
@@ -333,7 +420,7 @@ impl STLink {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?)
+        )?.trim_matches(char::from(0)).to_owned())
     }
 
     pub fn board(&self) -> Result<String, err::Error> {
@@ -343,14 +430,14 @@ impl STLink {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?)
+        )?.trim_matches(char::from(0)).to_owned())
     }
 
-    pub fn reset_mode(&mut self, reset_mode: DebugResetMode) {
+    pub fn set_reset_mode(&mut self, reset_mode: DebugResetMode) {
         self.debug_connect_parameters.reset_mode = reset_mode;
     }
 
-    pub fn connection_mode(&mut self, connection_mode: DebugConnectMode) {
+    pub fn set_connection_mode(&mut self, connection_mode: DebugConnectMode) {
         self.debug_connect_parameters.connection_mode = connection_mode
     }
 }
@@ -359,10 +446,41 @@ impl std::fmt::Display for STLink {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "Serial Number: {}, Firmware Version: {}, Board: {}",
+            "\
+Board: {},
+Serial Number: {},
+Firmware Version: {},
+Index: {},
+Connection Mode: {:?},
+Reset Mode: {:?},
+Access Port Count: {},
+Access Port: {},
+Debug Port: {:?},
+Old Firmware: {},
+{},
+Frequency: {},
+Bridge: {},
+Shared: {},
+Debug Sleep: {},
+Speed: {},
+Target Voltage: {}",
+            self.board().unwrap_or("undefined".into()),
             self.serial_number().unwrap_or("undefined".into()),
             self.firmware_version().unwrap_or("undefined".into()),
-            self.board().unwrap_or("undefined".into()),
+            self.index(),
+            self.connection_mode(),
+            self.reset_mode(),
+            self.access_port_count(),
+            self.access_port(),
+            self.debug_port(),
+            self.old_firmware(),
+            self.frequencies(),
+            self.frequency(),
+            self.bridge(),
+            self.shared(),
+            self.debug_sleep(),
+            self.speed(),
+            self.target_voltage().unwrap_or(0.0)
         )
     }
 }
@@ -380,7 +498,7 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?)
+        )?.trim_matches(char::from(0)).to_owned())
     }
 
     pub fn cpu(&self) -> Result<String, err::Error> {
@@ -390,7 +508,7 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?)
+        )?.trim_matches(char::from(0)).to_owned())
     }
 
     pub fn name(&self) -> Result<String, err::Error> {
@@ -400,7 +518,7 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?)
+        )?.trim_matches(char::from(0)).to_owned())
     }
 
     pub fn series(&self) -> Result<String, err::Error> {
@@ -410,7 +528,7 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?)
+        )?.trim_matches(char::from(0)).to_owned())
     }
 
     pub fn description(&self) -> Result<String, err::Error> {
@@ -420,7 +538,7 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?)
+        )?.trim_matches(char::from(0)).to_owned())
     }
 
     pub fn revision_id(&self) -> Result<String, err::Error> {
@@ -430,7 +548,7 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?)
+        )?.trim_matches(char::from(0)).to_owned())
     }
 
     pub fn board(&self) -> Result<String, err::Error> {
@@ -440,7 +558,7 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?)
+        )?.trim_matches(char::from(0)).to_owned())
     }
 
     pub fn device_id(&self) -> i32 {
@@ -460,7 +578,17 @@ impl std::fmt::Display for DeviceInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "Category: {}, Cpu: {}, Name: {}, Series: {}, Description: {}, Revision Id: {}, Board: {}, Device Id: 0x{:X}, Flash Size: 0x{:X}, Bootloader Version: 0x{:X}",
+            "\
+Category: {},
+Cpu: {},
+Name: {},
+Series: {},
+Description: {},
+Revision Id: {},
+Board: {},
+Device Id: 0x{:X},
+Flash Size: 0x{:X},
+Bootloader Version: 0x{:X}",
             self.category().unwrap_or("undefined".into()),
             self.cpu().unwrap_or("undefined".into()),
             self.name().unwrap_or("undefined".into()),
@@ -473,12 +601,6 @@ impl std::fmt::Display for DeviceInfo {
             self.bootloader_version()
         )
     }
-}
-
-pub struct STM32CubeProg {
-    #[allow(dead_code)]
-    library: libloading::Library,
-    vtable: VTable,
 }
 
 pub enum Register {
@@ -521,6 +643,12 @@ impl From<Register> for u32 {
             Register::PC => 15,
         }
     }
+}
+
+pub struct STM32CubeProg {
+    #[allow(dead_code)]
+    library: libloading::Library,
+    vtable: VTable,
 }
 
 impl STM32CubeProg {
