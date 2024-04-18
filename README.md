@@ -1,4 +1,6 @@
-# stm32cubeprog-rs 
+# stm32cubeprog-rs  
+
+[![crates.io](https://img.shields.io/crates/v/stm32cubeprog-rs?label=stm32cubeprog-rs)](https://crates.io/crates/stm32cubeprog-rs) [![documentation](https://docs.rs/stm32cubeprog-rs/badge.svg)](https://docs.rs/stm32cubeprog-rs)
 
 This crate provides Rust bindings for the STM32CubeProgrammer API, facilitating the interaction with STMicroelectronics hardware programming tools.
 
