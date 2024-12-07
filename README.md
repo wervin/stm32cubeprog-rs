@@ -4,6 +4,8 @@
 
 This crate provides Rust bindings for the STM32CubeProgrammer API, facilitating the interaction with STMicroelectronics hardware programming tools.
 
+> Since I don’t have much time to work on this repo, you might want to check out this [other project](https://github.com/ckrenslehner/stm32cubeprogrammer-rs) that also provides Rust bindings for the STM32CubeProgrammer API.
+
 ## Compatibility
 
 The crate is designed to be compatible with both Linux and Windows operating systems.
