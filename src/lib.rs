@@ -209,6 +209,7 @@ type GetStLinkList = unsafe extern "C" fn(
 ) -> std::os::raw::c_int;
 type ConnectStLink =
     unsafe extern "C" fn(debug_connect_parameters: DebugConnectParameters) -> std::os::raw::c_int;
+type DeleteInterfaceList = unsafe extern "C" fn();
 type Disconnect = unsafe extern "C" fn();
 type Reset = unsafe extern "C" fn(reset_mode: DebugResetMode) -> std::os::raw::c_int;
 type MassErase = unsafe extern "C" fn() -> std::os::raw::c_int;
@@ -246,6 +247,7 @@ pub struct VTable {
     set_verbosity_level: libloading::os::unix::Symbol<SetVerbosityLevel>,
     get_stlink_list: libloading::os::unix::Symbol<GetStLinkList>,
     connect_stlink: libloading::os::unix::Symbol<ConnectStLink>,
+    delete_interface_list: libloading::os::windows::Symbol<DeleteInterfaceList>,
     disconnect: libloading::os::unix::Symbol<Disconnect>,
     reset: libloading::os::unix::Symbol<Reset>,
     mass_erase: libloading::os::unix::Symbol<MassErase>,
@@ -253,8 +255,8 @@ pub struct VTable {
     get_device_general_info: libloading::os::unix::Symbol<GetDeviceGeneralInfo>,
     read_memory: libloading::os::unix::Symbol<ReadMemory>,
     write_memory: libloading::os::unix::Symbol<WriteMemory>,
-    read_core_register: libloading::os::unix::Symbol<ReadCoreRegister>,
-    write_core_register: libloading::os::unix::Symbol<WriteCoreRegister>,
+    read_core_register: libloading::os::windows::Symbol<ReadCoreRegister>,
+    write_core_register: libloading::os::windows::Symbol<WriteCoreRegister>,
 }
 
 #[cfg(windows)]
@@ -264,6 +266,7 @@ pub struct VTable {
     set_verbosity_level: libloading::os::windows::Symbol<SetVerbosityLevel>,
     get_stlink_list: libloading::os::windows::Symbol<GetStLinkList>,
     connect_stlink: libloading::os::windows::Symbol<ConnectStLink>,
+    delete_interface_list: libloading::os::windows::Symbol<DeleteInterfaceList>,
     disconnect: libloading::os::windows::Symbol<Disconnect>,
     reset: libloading::os::windows::Symbol<Reset>,
     mass_erase: libloading::os::windows::Symbol<MassErase>,
@@ -280,32 +283,47 @@ impl VTable {
         let set_loaders_path: libloading::Symbol<SetLoaderPath> =
             unsafe { library.get(b"setLoadersPath\0")? };
         let set_loaders_path = unsafe { set_loaders_path.into_raw() };
+
         let set_display_callbacks: libloading::Symbol<SetDisplayCallbacks> =
             unsafe { library.get(b"setDisplayCallbacks\0")? };
         let set_display_callbacks = unsafe { set_display_callbacks.into_raw() };
+
         let set_verbosity_level: libloading::Symbol<SetVerbosityLevel> =
             unsafe { library.get(b"setVerbosityLevel\0")? };
         let set_verbosity_level = unsafe { set_verbosity_level.into_raw() };
+
         let get_stlink_list: libloading::Symbol<GetStLinkList> =
             unsafe { library.get(b"getStLinkList\0")? };
         let get_stlink_list = unsafe { get_stlink_list.into_raw() };
+
         let connect_stlink: libloading::Symbol<ConnectStLink> =
             unsafe { library.get(b"connectStLink\0")? };
         let connect_stlink = unsafe { connect_stlink.into_raw() };
+
+        let delete_interface_list: libloading::Symbol<DeleteInterfaceList> =
+            unsafe { library.get(b"deleteInterfaceList\0")? };
+        let delete_interface_list = unsafe { delete_interface_list.into_raw() };
+
         let disconnect: libloading::Symbol<Disconnect> = unsafe { library.get(b"disconnect\0")? };
         let disconnect = unsafe { disconnect.into_raw() };
+
         let reset: libloading::Symbol<Reset> = unsafe { library.get(b"reset\0")? };
         let reset = unsafe { reset.into_raw() };
+
         let mass_erase: libloading::Symbol<MassErase> = unsafe { library.get(b"massErase\0")? };
         let mass_erase = unsafe { mass_erase.into_raw() };
+
         let download_file: libloading::Symbol<DownloadFile> =
             unsafe { library.get(b"downloadFile\0")? };
         let download_file = unsafe { download_file.into_raw() };
+
         let get_device_general_info: libloading::Symbol<GetDeviceGeneralInfo> =
             unsafe { library.get(b"getDeviceGeneralInf\0")? };
         let get_device_general_info = unsafe { get_device_general_info.into_raw() };
+
         let read_memory: libloading::Symbol<ReadMemory> = unsafe { library.get(b"readMemory\0")? };
         let read_memory = unsafe { read_memory.into_raw() };
+
         let write_memory: libloading::Symbol<WriteMemory> =
             unsafe { library.get(b"writeMemory\0")? };
         let write_memory = unsafe { write_memory.into_raw() };
@@ -322,6 +340,7 @@ impl VTable {
             set_verbosity_level,
             get_stlink_list,
             connect_stlink,
+            delete_interface_list,
             disconnect,
             reset,
             mass_erase,
@@ -330,7 +349,7 @@ impl VTable {
             read_memory,
             write_memory,
             read_core_register,
-            write_core_register,
+            write_core_register
         })
     }
 }
@@ -400,7 +419,9 @@ impl STLink {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?.trim_matches(char::from(0)).parse()?)
+        )?
+        .trim_matches(char::from(0))
+        .parse()?)
     }
 
     pub fn serial_number(&self) -> Result<String, err::Error> {
@@ -410,7 +431,9 @@ impl STLink {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?.trim_matches(char::from(0)).to_owned())
+        )?
+        .trim_matches(char::from(0))
+        .to_owned())
     }
 
     pub fn firmware_version(&self) -> Result<String, err::Error> {
@@ -420,7 +443,9 @@ impl STLink {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?.trim_matches(char::from(0)).to_owned())
+        )?
+        .trim_matches(char::from(0))
+        .to_owned())
     }
 
     pub fn board(&self) -> Result<String, err::Error> {
@@ -430,7 +455,9 @@ impl STLink {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?.trim_matches(char::from(0)).to_owned())
+        )?
+        .trim_matches(char::from(0))
+        .to_owned())
     }
 
     pub fn set_access_port(&mut self, access_port: i32) {
@@ -506,7 +533,9 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?.trim_matches(char::from(0)).to_owned())
+        )?
+        .trim_matches(char::from(0))
+        .to_owned())
     }
 
     pub fn cpu(&self) -> Result<String, err::Error> {
@@ -516,7 +545,9 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?.trim_matches(char::from(0)).to_owned())
+        )?
+        .trim_matches(char::from(0))
+        .to_owned())
     }
 
     pub fn name(&self) -> Result<String, err::Error> {
@@ -526,7 +557,9 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?.trim_matches(char::from(0)).to_owned())
+        )?
+        .trim_matches(char::from(0))
+        .to_owned())
     }
 
     pub fn series(&self) -> Result<String, err::Error> {
@@ -536,7 +569,9 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?.trim_matches(char::from(0)).to_owned())
+        )?
+        .trim_matches(char::from(0))
+        .to_owned())
     }
 
     pub fn description(&self) -> Result<String, err::Error> {
@@ -546,7 +581,9 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?.trim_matches(char::from(0)).to_owned())
+        )?
+        .trim_matches(char::from(0))
+        .to_owned())
     }
 
     pub fn revision_id(&self) -> Result<String, err::Error> {
@@ -556,7 +593,9 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?.trim_matches(char::from(0)).to_owned())
+        )?
+        .trim_matches(char::from(0))
+        .to_owned())
     }
 
     pub fn board(&self) -> Result<String, err::Error> {
@@ -566,7 +605,9 @@ impl DeviceInfo {
                 .iter()
                 .map(|&c| c as u8)
                 .collect(),
-        )?.trim_matches(char::from(0)).to_owned())
+        )?
+        .trim_matches(char::from(0))
+        .to_owned())
     }
 
     pub fn device_id(&self) -> i32 {
@@ -733,10 +774,14 @@ impl STM32CubeProg {
         let stlink_count =
             unsafe { (self.vtable.get_stlink_list)(&mut debug_connect_parameters, 0) };
 
+        if debug_connect_parameters.is_null() || stlink_count == 0 {
+            return Err(err::CubeProgrammerError::NoDeviceFound.into());
+        }
+
         let params_slice =
             unsafe { std::slice::from_raw_parts(debug_connect_parameters, stlink_count as usize) };
 
-        params_slice
+        let slice = params_slice
             .iter()
             .map(|param| -> Result<STLink, err::Error> {
                 let debug_connect_parameters = param.clone();
@@ -744,7 +789,11 @@ impl STM32CubeProg {
                     debug_connect_parameters,
                 })
             })
-            .collect::<Result<Vec<STLink>, err::Error>>()
+            .collect::<Result<Vec<STLink>, err::Error>>();
+
+        unsafe { (self.vtable.delete_interface_list)() };
+
+        slice
     }
 
     pub fn connect(&self, stlink: &STLink) -> Result<(), err::Error> {
@@ -838,6 +887,11 @@ impl STM32CubeProg {
     pub fn read_memory8(&self, address: u32, size: u32) -> Result<Vec<u8>, err::Error> {
         let mut data = std::ptr::null_mut();
         let error = unsafe { (self.vtable.read_memory)(address, &mut data, size) };
+
+        if data.is_null() {
+            return Err(err::CubeProgrammerError::MemoryReadError.into());
+        }
+
         if error == 0 {
             let data: &mut [u8] = unsafe { core::slice::from_raw_parts_mut(data, size as usize) };
             Ok(data.to_vec())
@@ -849,6 +903,11 @@ impl STM32CubeProg {
     pub fn read_memory32(&self, address: u32, size: u32) -> Result<Vec<u32>, err::Error> {
         let mut data = std::ptr::null_mut();
         let error = unsafe { (self.vtable.read_memory)(address, &mut data, size * 4) };
+
+        if data.is_null() {
+            return Err(err::CubeProgrammerError::MemoryReadError.into());
+        }
+
         if error == 0 {
             let data: &mut [u8] =
                 unsafe { core::slice::from_raw_parts_mut(data, (size * 4) as usize) };
