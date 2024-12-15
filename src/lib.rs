@@ -247,7 +247,7 @@ pub struct VTable {
     set_verbosity_level: libloading::os::unix::Symbol<SetVerbosityLevel>,
     get_stlink_list: libloading::os::unix::Symbol<GetStLinkList>,
     connect_stlink: libloading::os::unix::Symbol<ConnectStLink>,
-    delete_interface_list: libloading::os::windows::Symbol<DeleteInterfaceList>,
+    delete_interface_list: libloading::os::unix::Symbol<DeleteInterfaceList>,
     disconnect: libloading::os::unix::Symbol<Disconnect>,
     reset: libloading::os::unix::Symbol<Reset>,
     mass_erase: libloading::os::unix::Symbol<MassErase>,
@@ -255,8 +255,8 @@ pub struct VTable {
     get_device_general_info: libloading::os::unix::Symbol<GetDeviceGeneralInfo>,
     read_memory: libloading::os::unix::Symbol<ReadMemory>,
     write_memory: libloading::os::unix::Symbol<WriteMemory>,
-    read_core_register: libloading::os::windows::Symbol<ReadCoreRegister>,
-    write_core_register: libloading::os::windows::Symbol<WriteCoreRegister>,
+    read_core_register: libloading::os::unix::Symbol<ReadCoreRegister>,
+    write_core_register: libloading::os::unix::Symbol<WriteCoreRegister>,
 }
 
 #[cfg(windows)]
